@@ -1,0 +1,17 @@
+class_id,class_name,pixels,hex_colour,r,g,b
+1,Alfalfa,46,#1f77b4,31,119,180
+2,Corn-notill,1428,#ff7f0e,255,127,14
+3,Corn-mintill,830,#2ca02c,44,160,44
+4,Corn,237,#d62728,214,39,40
+5,Grass-pasture,483,#9467bd,148,103,189
+6,Grass-trees,730,#8c564b,140,86,75
+7,Grass-pasture-mowed,28,#e377c2,227,119,194
+8,Hay-windrowed,478,#7f7f7f,127,127,127
+9,Oats,20,#bcbd22,188,189,34
+10,Soybean-notill,972,#17becf,23,190,207
+11,Soybean-mintill,2455,#aec7e8,174,199,232
+12,Soybean-clean,593,#ffbb78,255,187,120
+13,Wheat,205,#98df8a,152,223,138
+14,Woods,1265,#ff9896,255,152,150
+15,Buildings-Grass-Trees-Drives,386,#c5b0d5,197,176,213
+16,Stone-Steel-Towers,93,#c49c94,196,156,148

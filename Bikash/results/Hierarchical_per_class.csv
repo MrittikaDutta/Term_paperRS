@@ -1,0 +1,17 @@
+Class,Precision (%),Recall (%),F1 (%),Test pixels
+1. Alfalfa,0.0,0.0,0.0,41
+2. Corn-notill,60.1,20.6,30.7,1285
+3. Corn-mintill,15.6,14.5,15.0,747
+4. Corn,17.5,17.4,17.5,213
+5. Grass-pasture,38.7,24.4,29.9,435
+6. Grass-trees,74.2,57.4,64.7,657
+7. Grass-pasture-mowed,0.0,0.0,0.0,23
+8. Hay-windrowed,82.3,98.1,89.5,430
+9. Oats,0.0,0.0,0.0,15
+10. Soybean-notill,29.5,35.0,32.0,875
+11. Soybean-mintill,53.4,60.8,56.9,2209
+12. Soybean-clean,16.6,24.0,19.6,534
+13. Wheat,76.7,92.4,83.8,185
+14. Woods,63.4,36.8,46.6,1139
+15. Buildings-Grass-Trees-Drives,11.4,23.3,15.3,347
+16. Stone-Steel-Towers,98.5,79.8,88.2,84

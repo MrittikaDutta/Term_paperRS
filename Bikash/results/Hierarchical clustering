@@ -1,0 +1,113 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from scipy.cluster.hierarchy import linkage, fcluster, dendrogram, cophenet
+from scipy.spatial.distance import pdist
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.feature_extraction.image import grid_to_graph
+from sklearn.metrics import silhouette_score, davies_bouldin_score, pairwise_distances_argmin
+
+# ---------------- settings
+CSV = "indian_pines.csv"        # row, col, band_1 ... band_200
+N_PCS = 20                        # cluster on PCA features
+N_SAMPLE = 5000                   # pixels used to build the dendrogram
+K_RANGE = range(4, 31, 2)         # numbers of clusters to evaluate
+K_FINAL = None                    # None = cut at the largest gap in the dendrogram; or set e.g. 16
+METHOD = "ward"                   # linkage: "ward", "average", "complete", "single"
+SEED = 0
+
+# ---------------- load + PCA features
+df = pd.read_csv(CSV)
+band_cols = [c for c in df.columns if c.startswith("band_")]
+X = df[band_cols].to_numpy(dtype=float)
+rows, cols = df["row"].to_numpy(), df["col"].to_numpy()
+H, W = rows.max() + 1, cols.max() + 1
+
+F = PCA(n_components=N_PCS, random_state=SEED).fit_transform(StandardScaler().fit_transform(X))
+rng = np.random.default_rng(SEED)
+S = F[rng.choice(len(F), N_SAMPLE, replace=False)]          # random sample of pixels
+print(f"{len(F)} pixels, {N_PCS} PCA features, dendrogram built on {N_SAMPLE} pixels")
+
+# ---------------- 1. compare linkage methods (cophenetic correlation: how well the tree keeps the real distances)
+d = pdist(S)
+for m in ["single", "complete", "average", "ward"]:
+    c, _ = cophenet(linkage(S, method=m), d)
+    print(f"{m:>8} linkage: cophenetic correlation = {c:.3f}")
+L = linkage(S, method=METHOD)                                 # the tree used from here on
+
+# ---------------- 2. choose the number of clusters
+res = []
+for k in K_RANGE:
+    lab = fcluster(L, t=k, criterion="maxclust") - 1
+    gap = L[-(k - 1), 2] - L[-k, 2]                           # jump in merge distance when going from k to k-1 clusters
+    res.append({"k": k, "merge_gap": gap,
+                "Silhouette": silhouette_score(S, lab),
+                "Davies-Bouldin": davies_bouldin_score(S, lab)})
+res = pd.DataFrame(res)
+print(res.round(3).to_string(index=False))
+res.round(4).to_csv("hier_model_selection.csv", index=False)
+k_gap = int(res.loc[res["merge_gap"].idxmax(), "k"])
+K = K_FINAL or k_gap
+print(f"Largest dendrogram gap at k = {k_gap}; using k = {K}")
+
+# ---------------- 3. final clusters: cut the tree, then give every pixel its nearest cluster centre
+lab_s = fcluster(L, t=K, criterion="maxclust") - 1
+centroids = np.array([S[lab_s == c].mean(0) for c in np.unique(lab_s)])
+labels = pairwise_distances_argmin(F, centroids)
+K = len(centroids)
+print(f"Hierarchical ({METHOD}, k = {K}): "
+      f"Silhouette = {silhouette_score(F, labels, sample_size=5000, random_state=SEED):.3f}  "
+      f"Davies-Bouldin = {davies_bouldin_score(F, labels):.3f}")
+print("Cluster sizes:", np.bincount(labels, minlength=K).tolist())
+
+# ---------------- 4. spatially constrained hierarchical clustering (only neighbouring pixels may merge)
+order = np.lexsort((cols, rows))                              # pixels in row-major image order
+connectivity = grid_to_graph(H, W)                            # 4-neighbour pixel graph
+spatial = AgglomerativeClustering(n_clusters=K, linkage="ward", connectivity=connectivity).fit(F[order])
+labels_spatial = np.empty(len(F), dtype=int)
+labels_spatial[order] = spatial.labels_
+print(f"Spatially constrained ward (k = {K}): "
+      f"Silhouette = {silhouette_score(F, labels_spatial, sample_size=5000, random_state=SEED):.3f}  "
+      f"Davies-Bouldin = {davies_bouldin_score(F, labels_spatial):.3f}")
+
+pd.DataFrame({"row": rows, "col": cols, "cluster": labels, "cluster_spatial": labels_spatial}
+             ).to_csv(f"hier_k{K}_clusters.csv", index=False)
+
+# ---------------- Fig 1: dendrogram + model selection
+cut = (L[-(K - 1), 2] + L[-K, 2]) / 2                         # height that gives K clusters
+fig, (a1, a2, a3) = plt.subplots(1, 3, figsize=(15, 3.8))
+dendrogram(L, truncate_mode="lastp", p=40, color_threshold=cut, above_threshold_color="grey",
+           no_labels=True, ax=a1)
+a1.axhline(cut, color="black", ls="--", lw=1)
+a1.set_title(f"(a) Dendrogram ({METHOD}), cut at k = {K}", loc="left", fontsize=9)
+a1.set_ylabel("Merge distance")
+a2.plot(res["k"], res["merge_gap"], marker="o", lw=2)
+a2.axvline(k_gap, color="grey", ls=":")
+a2.set_title("(b) Jump in merge distance", loc="left", fontsize=9)
+a2.set_xlabel("Number of clusters"); a2.set_ylabel("Gap")
+a3.plot(res["k"], res["Silhouette"], marker="o", lw=2, label="Silhouette (higher = better)")
+a3.plot(res["k"], res["Davies-Bouldin"], marker="s", lw=2, label="Davies-Bouldin (lower = better)")
+a3.set_title("(c) Cluster quality", loc="left", fontsize=9)
+a3.set_xlabel("Number of clusters"); a3.legend(frameon=False, fontsize=8)
+for a in (a2, a3):
+    a.grid(color="#e4e3df")
+fig.tight_layout(); fig.savefig("hier_dendrogram.png", dpi=300); fig.savefig("hier_dendrogram.eps")
+
+# ---------------- Fig 2: cluster maps
+colours = list(plt.get_cmap("tab20").colors) + list(plt.get_cmap("tab20b").colors)
+cmap = ListedColormap(colours[:K])
+
+def to_img(v):
+    img = np.zeros((H, W)); img[rows, cols] = v; return img
+
+fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 4.6))
+for a, lab, title in ((a1, labels, f"(a) Hierarchical ({METHOD}), k = {K}"),
+                      (a2, labels_spatial, f"(b) Spatially constrained ward, k = {K}")):
+    im = a.imshow(to_img(lab), cmap=cmap, vmin=-0.5, vmax=K - 0.5, interpolation="nearest")
+    a.set_title(title, loc="left", fontsize=9); a.set_xticks([]); a.set_yticks([])
+fig.colorbar(im, ax=[a1, a2], ticks=range(K), fraction=0.03, label="Cluster")
+fig.savefig(f"hier_k{K}_maps.png", dpi=300, bbox_inches="tight"); fig.savefig(f"hier_k{K}_maps.eps", bbox_inches="tight")
+plt.show()
